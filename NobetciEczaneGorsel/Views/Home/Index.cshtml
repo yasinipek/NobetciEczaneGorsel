@@ -1,0 +1,501 @@
+﻿@{
+    ViewData["Title"] = "Nöbetçi Eczaneler";
+    Layout = null;
+}
+
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>@ViewData["Title"]</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 1000;
+            background-color: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+            max-width: 300px;
+            display: none;
+        }
+
+            .info-panel h3 {
+                margin-top: 0;
+                margin-bottom: 10px;
+            }
+
+            .info-panel p {
+                margin: 5px 0;
+            }
+
+            .info-panel button {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 8px 12px;
+                text-align: center;
+                text-decoration: none;
+                display: inline-block;
+                font-size: 14px;
+                margin-top: 10px;
+                cursor: pointer;
+                border-radius: 4px;
+            }
+
+                .info-panel button:hover {
+                    background-color: #45a049;
+                }
+
+        .loader {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .loader-text {
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 5px;
+            font-size: 18px;
+        }
+
+        .il-selector {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background-color: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+            max-width: 200px;
+        }
+
+            .il-selector select {
+                width: 100%;
+                padding: 8px;
+                border-radius: 4px;
+                border: 1px solid #ddd;
+                font-size: 14px;
+            }
+
+            .il-selector h3 {
+                margin-top: 0;
+                margin-bottom: 10px;
+                font-size: 16px;
+            }
+
+        .il-count {
+            margin-top: 5px;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="loader" id="loader">
+        <div class="loader-text">Yükleniyor...</div>
+    </div>
+
+    <!-- İl seçim paneli - sağ üst köşede -->
+    <div class="il-selector" id="il-selector">
+        <h3>İl Seçin</h3>
+        <select id="il-dropdown">
+            <option value="">Yükleniyor...</option>
+        </select>
+        <div class="il-count" id="il-count"></div>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="info-panel" id="info-panel">
+        <h3 id="eczane-adi"></h3>
+        <p id="eczane-adres"></p>
+        <p id="eczane-telefon"></p>
+        <p id="eczane-tarih"></p>
+        <button id="yol-tarifi">Yol Tarifi Al</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script>
+        // Global değişkenler
+        let map, userMarker, userPosition;
+        let eczaneMarkers = [];
+
+        // Sayfa yüklendiğinde çalışacak fonksiyon
+        document.addEventListener('DOMContentLoaded', function() {
+            initMap();
+            loadIller();
+            findUserLocation();
+
+            // İl seçim dropdown'ı değişiklik olayı
+            document.getElementById('il-dropdown').addEventListener('change', function() {
+                const selectedIlId = this.value;
+                loadEczaneData(selectedIlId);
+            });
+
+            // Yol tarifi düğmesine tıklama olayı
+            document.getElementById('yol-tarifi').addEventListener('click', getDirections);
+        });
+
+        // Haritayı başlat
+        function initMap() {
+            // Türkiye merkezi koordinatları
+            const turkiyeMerkez = [39.1, 35.6];
+            map = L.map('map').setView(turkiyeMerkez, 6);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+        }
+
+        // İlleri yükle
+        function loadIller() {
+            fetch('/Home/GetIller')
+                .then(response => response.json())
+                .then(data => {
+                    populateIlDropdown(data);
+                })
+                .catch(error => {
+                    console.error('İl listesi yükleme hatası:', error);
+                    document.getElementById('il-dropdown').innerHTML = '<option value="">İller yüklenemedi</option>';
+                });
+        }
+
+        // İl dropdown menüsünü doldur
+        function populateIlDropdown(iller) {
+            console.log("İl dropdown menüsü dolduruluyor...");
+            const dropdown = document.getElementById('il-dropdown');
+            dropdown.innerHTML = '';
+
+            // "Tüm İller" seçeneği ekle
+            const allOption = document.createElement('option');
+            allOption.value = "";
+            allOption.textContent = "Tüm İller";
+            dropdown.appendChild(allOption);
+
+            // Her il için seçenek ekle (id, ilAdi şeklinde geliyor)
+            iller.forEach(il => {
+                const option = document.createElement('option');
+                option.value = il.id;
+                option.textContent = il.ilAdi;
+                dropdown.appendChild(option);
+            });
+
+            console.log("Dropdown dolduruldu, toplam seçenek sayısı:", dropdown.options.length);
+        }
+
+        // Kullanıcı konumunu bul
+        function findUserLocation() {
+            showLoader();
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    // Başarılı konum bulma
+                    function(position) {
+                        userPosition = [position.coords.latitude, position.coords.longitude];
+                        console.log("Kullanıcı konumu alındı:", userPosition);
+
+                        // Kullanıcı işaretçisi oluştur
+                        if (userMarker) {
+                            map.removeLayer(userMarker);
+                        }
+
+                        const userIcon = L.icon({
+                            iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+                            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+                            iconSize: [25, 41],
+                            iconAnchor: [12, 41],
+                            popupAnchor: [1, -34],
+                            shadowSize: [41, 41]
+                        });
+
+                        userMarker = L.marker(userPosition, {
+                            icon: userIcon,
+                            title: 'Konumunuz'
+                        }).addTo(map);
+
+                        map.setView(userPosition, 14);
+
+                        // Reverse geocoding ile il bilgisi al
+                        reverseGeocode(userPosition);
+                    },
+                    // Hata durumu
+                    function(error) {
+                        console.warn("Konum alınamadı:", error.message);
+                        // Konum alınamadığında tüm eczaneleri göster
+                        loadEczaneData("");
+                        hideLoader();
+                    },
+                    // Geolocation seçenekleri
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            } else {
+                console.warn("Tarayıcınız konum hizmetlerini desteklemiyor.");
+                loadEczaneData("");
+                hideLoader();
+            }
+        }
+
+        // Reverse Geocoding ile il tespiti
+        function reverseGeocode(position) {
+            console.log("Reverse geocoding başlatılıyor...");
+
+            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${position[0]}&lon=${position[1]}&zoom=10&addressdetails=1`;
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Reverse geocoding yanıtı:", data);
+
+                    // İl bilgisini al (Türkiye'de 'state' veya 'province' veya 'county' olabilir)
+                    let ilAdi = data.address.state || data.address.province || data.address.county || "";
+                    ilAdi = ilAdi.toUpperCase(); // Veritabanındaki il adları büyük harfle
+
+                    console.log("Tespit edilen il adı:", ilAdi);
+
+                    if (ilAdi) {
+                        // İlleri tekrar getir ve tespit edilen il adına en yakın eşleşmeyi bul
+                        fetch('/Home/GetIller')
+                            .then(response => response.json())
+                            .then(iller => {
+                                console.log("Tüm iller yüklendi:", iller);
+
+                                // En iyi eşleşmeyi bul
+                                let bestMatch = null;
+                                let bestMatchScore = 0;
+
+                                iller.forEach(il => {
+                                    // İlk olarak tam eşleşme kontrolü
+                                    if (il.ilAdi.toUpperCase() === ilAdi) {
+                                        bestMatch = il;
+                                        bestMatchScore = 100; // Tam eşleşme, en yüksek puan
+                                        console.log("Tam eşleşme bulundu:", il.ilAdi);
+                                    }
+                                    // Kısmi eşleşme kontrolü (tam eşleşme yoksa)
+                                    else if (bestMatchScore < 100) {
+                                        // İl adının içinde geçiyor mu kontrolü
+                                        if (il.ilAdi.toUpperCase().includes(ilAdi) || ilAdi.includes(il.ilAdi.toUpperCase())) {
+                                            // Daha uzun eşleşmeyi tercih et
+                                            const matchLength = Math.min(il.ilAdi.length, ilAdi.length);
+                                            if (matchLength > bestMatchScore) {
+                                                bestMatch = il;
+                                                bestMatchScore = matchLength;
+                                                console.log("Kısmi eşleşme bulundu:", il.ilAdi, "Skor:", matchLength);
+                                            }
+                                        }
+                                    }
+                                });
+
+                                if (bestMatch) {
+                                    console.log("En iyi eşleşme:", bestMatch.ilAdi, "ID:", bestMatch.id);
+
+                                    // Dropdown'da seçim yap
+                                    const dropdown = document.getElementById('il-dropdown');
+                                    for (let i = 0; i < dropdown.options.length; i++) {
+                                        if (dropdown.options[i].value == bestMatch.id) {
+                                            dropdown.selectedIndex = i;
+                                            console.log("Dropdown'da seçildi:", dropdown.options[i].text);
+                                            break;
+                                        }
+                                    }
+
+                                    // Seçilen ile göre eczaneleri yükle
+                                    loadEczaneData(bestMatch.id);
+                                } else {
+                                    console.log("Eşleşen il bulunamadı");
+                                    loadEczaneData("");
+                                }
+                            })
+                            .catch(error => {
+                                console.error("İl listesi yükleme hatası:", error);
+                                loadEczaneData("");
+                            });
+                    } else {
+                        // İl tespit edilemezse tüm eczaneleri göster
+                        console.log("İl bilgisi alınamadı");
+                        loadEczaneData("");
+                    }
+                })
+                .catch(error => {
+                    console.error("Reverse geocoding hatası:", error);
+                    loadEczaneData("");
+                });
+        }
+
+        // Eczane verilerini yükle
+        function loadEczaneData(ilId) {
+            console.log("Eczane verileri yükleniyor, ilId:", ilId);
+            showLoader();
+
+            let url = '/Home/GetEczaneData';
+            if (ilId) {
+                url += `?ilId=${ilId}`;
+            }
+
+            console.log("API çağrısı:", url);
+
+            fetch(url)
+                .then(response => {
+                    console.log("API yanıt durumu:", response.status);
+                    if (!response.ok) {
+                        throw new Error(`HTTP hata kodu: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log(`${data.length} adet eczane yüklendi`);
+
+                    clearEczaneMarkers();
+                    displayEczaneler(data);
+
+                    // Eczane sayısını göster
+                    const ilAdi = ilId ? document.getElementById('il-dropdown').options[document.getElementById('il-dropdown').selectedIndex].text : "Tüm İller";
+                    document.getElementById('il-count').textContent = `${ilAdi}: ${data.length} eczane`;
+
+                    hideLoader();
+                })
+                .catch(error => {
+                    console.error('Eczane verileri yükleme hatası:', error);
+                    hideLoader();
+                    alert('Eczane verileri yüklenirken bir hata oluştu: ' + error.message);
+                });
+        }
+
+        // Eczaneleri haritada göster
+        function displayEczaneler(eczaneler) {
+            // Eczane ikonu
+            const eczaneIcon = L.icon({
+                iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+
+            // Her eczane için işaretçi oluştur
+            eczaneler.forEach(eczane => {
+                // Koordinatları float türüne çevir
+                let enlemStr = String(eczane.enlem || eczane.Enlem || "").replace(',', '.');
+                let boylamStr = String(eczane.boylam || eczane.Boylam || "").replace(',', '.');
+
+                const lat = parseFloat(enlemStr);
+                const lng = parseFloat(boylamStr);
+
+                if (isNaN(lat) || isNaN(lng)) {
+                    console.warn(`Geçersiz koordinat:`, eczane);
+                    return;
+                }
+
+                // Eczane işaretçisi oluştur
+                const marker = L.marker([lat, lng], {
+                    icon: eczaneIcon,
+                    title: eczane.isim || eczane.Isim || ""
+                }).addTo(map);
+
+                // İşaretçiye tıklama olayı ekle
+                marker.on('click', () => {
+                    showEczaneInfo(eczane, [lat, lng]);
+                });
+
+                // İşaretçiyi diziye ekle
+                eczaneMarkers.push({
+                    marker: marker,
+                    data: eczane,
+                    position: [lat, lng]
+                });
+            });
+
+            // Haritanın merkezini ve zoom seviyesini ayarla
+            if (eczaneMarkers.length > 0) {
+                if (userPosition) {
+                    // Kullanıcı konumu varsa ona göre merkez belirle
+                    map.setView(userPosition, 14);
+                } else {
+                    // Tüm eczaneleri içeren sınırları belirle
+                    const bounds = L.featureGroup(eczaneMarkers.map(item => item.marker)).getBounds();
+                    map.fitBounds(bounds, { padding: [50, 50] });
+                }
+            }
+        }
+
+        // Eczane bilgilerini göster
+        function showEczaneInfo(eczane, position) {
+            const infoPanel = document.getElementById('info-panel');
+
+            document.getElementById('eczane-adi').textContent = eczane.isim || eczane.Isim || "";
+            document.getElementById('eczane-adres').textContent = `Adres: ${eczane.adres || eczane.Adres || ""}`;
+            document.getElementById('eczane-telefon').textContent = `Telefon: ${eczane.telefon || eczane.Telefon || ""}`;
+            document.getElementById('eczane-tarih').textContent = `Tarih: ${eczane.tarih || eczane.Tarih || ""}`;
+
+            // Seçilen eczanenin konumunu kaydet (yol tarifi için)
+            infoPanel.setAttribute('data-lat', position[0]);
+            infoPanel.setAttribute('data-lng', position[1]);
+
+            // Bilgi panelini göster
+            infoPanel.style.display = 'block';
+        }
+
+        // Haritadaki eczane işaretçilerini temizle
+        function clearEczaneMarkers() {
+            eczaneMarkers.forEach(item => {
+                map.removeLayer(item.marker);
+            });
+            eczaneMarkers = [];
+        }
+
+        // Google Maps yol tarifi al
+        function getDirections() {
+            const infoPanel = document.getElementById('info-panel');
+            const targetLat = infoPanel.getAttribute('data-lat');
+            const targetLng = infoPanel.getAttribute('data-lng');
+
+            if (!userPosition) {
+                alert("Konumunuz tespit edilemedi. Lütfen konum erişimine izin verdiğinizden emin olun.");
+                return;
+            }
+
+            const url = `https://www.google.com/maps/dir/${userPosition[0]},${userPosition[1]}/${targetLat},${targetLng}`;
+            window.open(url, '_blank');
+        }
+
+        // Yükleniyor göstergesini gizle
+        function hideLoader() {
+            document.getElementById('loader').style.display = 'none';
+        }
+
+        // Yükleniyor göstergesini göster
+        function showLoader() {
+            document.getElementById('loader').style.display = 'flex';
+        }
+    </script>
+</body>
+</html>
