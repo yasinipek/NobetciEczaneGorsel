@@ -26,11 +26,6 @@ namespace NobetciEczaneGorsel.Controllers
             return View();
         }
 
-        public IActionResult Privacy()
-        {
-            return View();
-        }
-
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
         public IActionResult Error()
         {
@@ -44,47 +39,10 @@ namespace NobetciEczaneGorsel.Controllers
             try
             {
                 // Bugünün tarihini al
-                string bugun = DateTime.Now.ToString("dd.MM.yyyy");
-
-                // Ýliþkisel verileri include ederek eczaneleri sorgula
-                var query = _context.Eczaneler
-                    .Include(e => e.Il)
-                    .Where(e => e.Tarih == bugun);
-
-                // Ýl filtresi varsa uygula
-                if (ilId.HasValue)
-                {
-                    query = query.Where(e => e.IlId == ilId.Value);
-                }
+                string bugun = DateTime.Now.ToString("dd/MM/yyyy").Replace('.', '/');
 
                 // Veritabanýndan eczaneleri al
-                var eczaneler = await query.ToListAsync();
-
-                // Eðer hiç veri gelmiyorsa, veritabanýnda bugüne ait kayýt olmayabilir
-                if (eczaneler.Count == 0)
-                {
-                    // Test için en son tarihli kayýtlarý getir
-                    var sonTarih = await _context.Eczaneler.OrderByDescending(e => e.KayitZamani)
-                        .Select(e => e.Tarih)
-                        .FirstOrDefaultAsync();
-
-                    if (!string.IsNullOrEmpty(sonTarih))
-                    {
-                        // Ýliþkisel verileri include ederek son tarihli eczaneleri çek
-                        query = _context.Eczaneler
-                            .Include(e => e.Il)
-                            .Where(e => e.Tarih == sonTarih);
-
-                        // Ýl filtresi varsa uygula
-                        if (ilId.HasValue)
-                        {
-                            query = query.Where(e => e.IlId == ilId.Value);
-                        }
-
-                        eczaneler = await query.ToListAsync();
-                        _logger.LogInformation($"Bugüne ait kayýt bulunamadý. Son tarih: {sonTarih}, Kayýt sayýsý: {eczaneler.Count}");
-                    }
-                }
+                var eczaneler = await _context.Eczaneler.Where(e => e.IlId == ilId).Where(e => e.Tarih == bugun).ToListAsync();
 
                 // Sonuç setini JSON formatýnda döndür
                 if (eczaneler.Any())
@@ -138,37 +96,6 @@ namespace NobetciEczaneGorsel.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Ýlleri getirirken hata oluþtu");
-                return StatusCode(500, new { error = ex.Message });
-            }
-        }
-
-        // GET: Home/GetBugunNobetciIller
-        [HttpGet("Home/GetBugunNobetciIller")]
-        public async Task<IActionResult> GetBugunNobetciIller()
-        {
-            try
-            {
-                // Bugünün tarihini al
-                string bugun = DateTime.Now.ToString("dd.MM.yyyy");
-
-                // Bugün nöbetçi olan eczanelerin illerini distincte olarak getir
-                var nobetciIller = await _context.Eczaneler
-                    .Where(e => e.Tarih == bugun)
-                    .Select(e => e.Il)
-                    .Distinct()
-                    .OrderBy(i => i.IlAdi)
-                    .Select(i => new
-                    {
-                        id = i.Id,
-                        ilAdi = i.IlAdi
-                    })
-                    .ToListAsync();
-
-                return Json(nobetciIller);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Bugün nöbetçi illeri getirirken hata oluþtu");
                 return StatusCode(500, new { error = ex.Message });
             }
         }
