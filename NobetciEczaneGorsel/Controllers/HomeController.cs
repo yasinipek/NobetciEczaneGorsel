@@ -39,7 +39,16 @@ namespace NobetciEczaneGorsel.Controllers
             try
             {
                 // Bugünün tarihini al
-                string bugun = DateTime.Now.ToString("dd/MM/yyyy").Replace('.', '/');
+                string bugun;
+                int saat = DateTime.Now.Hour;
+                if (saat >= 8)
+                {
+                    bugun = DateTime.Now.ToString("dd/MM/yyyy").Replace('.', '/');
+                }
+                else
+                {
+                    bugun = DateTime.Now.AddDays(-1).ToString("dd/MM/yyyy").Replace('.', '/');
+                }
 
                 // Veritabanýndan eczaneleri al
                 var eczaneler = await _context.Eczaneler.Where(e => e.IlId == ilId).Where(e => e.Tarih == bugun).ToListAsync();
