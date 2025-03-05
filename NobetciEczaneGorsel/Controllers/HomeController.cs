@@ -50,8 +50,23 @@ namespace NobetciEczaneGorsel.Controllers
                     bugun = DateTime.Now.AddDays(-1).ToString("dd/MM/yyyy").Replace('.', '/');
                 }
 
+                // IQueryable oluþtur
+                var query = _context.Eczaneler.AsQueryable();
+
+                // Tarih filtresi uygula
+                query = query.Where(e => e.Tarih == bugun);
+
+                // ilId deðeri belirtilmiþse il filtresi uygula
+                if (ilId.HasValue && ilId.Value > 0)
+                {
+                    query = query.Where(e => e.IlId == ilId.Value);
+                }
+
+                // Ýl iliþkisini include et
+                query = query.Include(e => e.Il);
+
                 // Veritabanýndan eczaneleri al
-                var eczaneler = await _context.Eczaneler.Where(e => e.IlId == ilId).Where(e => e.Tarih == bugun).ToListAsync();
+                var eczaneler = await query.ToListAsync();
 
                 // Sonuç setini JSON formatýnda döndür
                 if (eczaneler.Any())
@@ -73,13 +88,13 @@ namespace NobetciEczaneGorsel.Controllers
                 else
                 {
                     // Hiç eczane bulunamadýysa
-                    _logger.LogWarning("Veritabanýnda hiç eczane kaydý bulunamadý");
+                    _logger.LogWarning("Belirtilen kriterlere göre veritabanýnda hiç eczane kaydý bulunamadý. ÝlId: {ilId}, Tarih: {tarih}", ilId, bugun);
                     return Json(new List<object>());
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Eczane verilerini getirirken hata oluþtu");
+                _logger.LogError(ex, "Eczane verilerini getirirken hata oluþtu. ÝlId: {ilId}", ilId);
                 return StatusCode(500, new { error = ex.Message, stackTrace = ex.StackTrace });
             }
         }
